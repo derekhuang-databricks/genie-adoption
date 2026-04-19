@@ -1,0 +1,10 @@
+resources:
+  pipelines:
+    etl:
+      name: "Genie Usage ETL"
+      serverless: true
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+      libraries:
+        - glob:
+            include: ../src/etl/**

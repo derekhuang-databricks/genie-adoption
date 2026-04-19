@@ -1,0 +1,43 @@
+# Genie Usage Dashboard, deployed via Declarative Automation Bundles.
+# See https://docs.databricks.com/dev-tools/bundles/index.html for documentation.
+bundle:
+  name: genie_usage
+
+include:
+  - resources/*.yml
+  - resources/**/*.yml
+
+variables:
+  catalog:
+    description: The catalog to use for storing the materialized view
+  schema:
+    description: The schema to use for storing the materialized view
+
+targets:
+  dev:
+    # The default target uses 'mode: development' to create a development copy.
+    # - Deployed resources get prefixed with '[dev my_user_name]'
+    # - Any job schedules and triggers are paused by default.
+    # See also https://docs.databricks.com/dev-tools/bundles/deployment-modes.html.
+    mode: development
+    default: true
+    workspace:
+      host: <your-workspace-url>  # e.g. https://my-workspace.cloud.databricks.com
+    variables:
+      catalog: <your-catalog>     # e.g. main
+      schema: <your-schema>       # e.g. genie_usage
+
+  prod:
+    mode: production
+    workspace:
+      host: <your-workspace-url>
+      # We explicitly deploy to /Workspace/Users/<service-principal> to make sure we only have a single copy.
+      root_path: /Workspace/Users/<service-principal>/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: <your-catalog>
+      schema: <your-schema>
+    run_as:
+      service_principal_name: <service-principal>
+    permissions:
+      - service_principal_name: <service-principal>
+        level: CAN_MANAGE

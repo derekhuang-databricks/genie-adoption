@@ -1,0 +1,36 @@
+resources:
+  jobs:
+    genie_usage_job:
+      name: Genie Usage ETL & Dashboard Refresh
+
+      schedule:
+        # Trigger to run every weekday at 9am and 1pm. (Adjust the cron expression and timezone as needed.)
+        # See https://docs.databricks.com/aws/en/dev-tools/bundles/resources#jobschedule
+        quartz_cron_expression: 0 0 9,13 ? * MON-FRI
+        timezone_id: UTC
+        pause_status: PAUSED
+
+      #email_notifications:
+      #  on_failure:
+      #    - your_email@example.com
+
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+
+      tasks:
+        - task_key: etl
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.etl.id}
+        - task_key: dashboard
+          depends_on:
+            - task_key: etl
+          dashboard_task:
+            dashboard_id: ${resources.dashboards.dashboard.id}
+
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "5"

@@ -1,0 +1,9 @@
+resources:
+  dashboards:
+    dashboard:
+      display_name: "Genie Usage Dashboard"
+      warehouse_id: <your-warehouse-id>  # SQL warehouse ID from the 'SQL Warehouses' page
+      file_path: ../src/dashboard/[Working Copy] Genie Usage Dashboard.lvdash.json
+      dataset_catalog: ${var.catalog}
+      dataset_schema: ${var.schema}
+      embed_credentials: true

@@ -1,0 +1,2688 @@
+{
+  "datasets": [
+    {
+      "name": "ds_exec_summary",
+      "displayName": "Genie Metrics by Day",
+      "queryLines": [
+        "SELECT\n",
+        "    TO_DATE(event_date) as event_date,\n",
+        "    event_date AS event_datetime,\n",
+        "    * except (event_date)\n",
+        "FROM genie_usage_by_day"
+      ],
+      "catalog": "catalog",
+      "schema": "schema"
+    },
+    {
+      "name": "3a1ba22e",
+      "displayName": "Genie Metrics by Week",
+      "queryLines": [
+        "SELECT\n",
+        "    * except (event_date, event_month)\n",
+        "FROM genie_usage_by_day\n",
+        "GROUP BY ALL"
+      ],
+      "catalog": "catalog",
+      "schema": "schema"
+    },
+    {
+      "name": "2044235c",
+      "displayName": "Genie Metrics by Month",
+      "queryLines": [
+        "SELECT\n",
+        "    * except (event_date, event_week)\n",
+        "FROM genie_usage_by_day\n",
+        "GROUP BY ALL"
+      ],
+      "catalog": "catalog",
+      "schema": "schema"
+    },
+    {
+      "name": "ds_mau_trend",
+      "displayName": "Genie Details",
+      "queryLines": [
+        "SELECT *\n",
+        "FROM genie_event_detail"
+      ],
+      "catalog": "catalog",
+      "schema": "schema"
+    },
+    {
+      "name": "ds_top_spaces",
+      "displayName": "Top Genie Spaces",
+      "queryLines": [
+        "-- Top Genie Spaces\n",
+        "SELECT\n",
+        "    DISTINCT space_id,\n",
+        "    COUNT(DISTINCT user) as unique_user,\n",
+        "    COUNT(*) as ask_question,\n",
+        "    MIN(event_time_local_tz) as first_activity,\n",
+        "    MAX(event_time_local_tz) as last_activity\n",
+        "FROM\n",
+        "    genie_event_detail\n",
+        "WHERE\n",
+        "    action = 'Ask Question'\n",
+        "GROUP BY ALL;"
+      ],
+      "catalog": "catalog",
+      "schema": "schema"
+    },
+    {
+      "name": "ds_user_activity",
+      "displayName": "User Activity Detail",
+      "queryLines": [
+        "-- User Activity Detail over last 90 days\n",
+        "SELECT\n",
+        "    workspace_id,\n",
+        "    TRUNC(event_time_local_tz, 'MM') as month,\n",
+        "    user,\n",
+        "    COUNT(CASE WHEN action_name IN ('createConversationMessage','genieCreateConversationMessage','genieStartConversationMessage') THEN 1 END) as questions_asked,\n",
+        "    COUNT(DISTINCT space_id) as spaces_used,\n",
+        "    MIN(event_time_local_tz) as first_seen,\n",
+        "    MAX(event_time_local_tz) as last_seen,\n",
+        "    DATEDIFF(MAX(event_time_local_tz), MIN(event_time_local_tz)) as active_span_days\n",
+        "FROM\n",
+        "    genie_event_detail\n",
+        "WHERE\n",
+        "    action = 'Ask Question'\n",
+        "GROUP BY ALL\n",
+        "ORDER BY user DESC;"
+      ],
+      "catalog": "catalog",
+      "schema": "schema"
+    },
+    {
+      "name": "ds_query_performance",
+      "displayName": "Query Performance",
+      "queryLines": [
+        "-- Query Performance over last year (dynamic)\n",
+        "SELECT\n",
+        "    workspace_id,\n",
+        "    start_time,\n",
+        "    executed_by_user_id,\n",
+        "    COUNT(*) as total_queries,\n",
+        "    ROUND(AVG(total_duration_ms)/1000, 0) as avg_latency_s,\n",
+        "    ROUND(PERCENTILE(total_duration_ms, 0.5)/1000, 0) as p50_latency_s,\n",
+        "    ROUND(PERCENTILE(total_duration_ms, 0.95)/1000, 0) as p95_latency_s,\n",
+        "    ROUND(SUM(CASE WHEN execution_status = 'FINISHED' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as success_rate_pct,\n",
+        "    ROUND(SUM(CASE WHEN from_result_cache THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as cache_hit_pct\n",
+        "FROM\n",
+        "    system.query.history\n",
+        "WHERE\n",
+        "    query_source.genie_space_id IS NOT NULL\n",
+        "AND\n",
+        "    workspace_id = (\n",
+        "        SELECT workspace_id FROM genie_usage LIMIT 1\n",
+        "    )\n",
+        "GROUP BY ALL\n",
+        "ORDER BY 2;"
+      ],
+      "catalog": "catalog",
+      "schema": "schema"
+    }
+  ],
+  "pages": [
+    {
+      "name": "8472bc89",
+      "displayName": "Dashboard",
+      "layout": [
+        {
+          "widget": {
+            "name": "3ea94050",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### List of Genie Spaces"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "c341b231",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_mau_trend",
+                  "fields": [
+                    {
+                      "name": "workspace_id",
+                      "expression": "`workspace_id`"
+                    },
+                    {
+                      "name": "event_time_local_tz",
+                      "expression": "`event_time_local_tz`"
+                    },
+                    {
+                      "name": "space_id",
+                      "expression": "`space_id`"
+                    },
+                    {
+                      "name": "genie_link",
+                      "expression": "`genie_link`"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`action` IN ('Create Space')"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": false
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "workspace_id",
+                    "displayName": "Workspace ID"
+                  },
+                  {
+                    "fieldName": "event_time_local_tz",
+                    "headerTooltip": "Australia/Melbourne timezone",
+                    "displayName": "Created Day/Time"
+                  },
+                  {
+                    "fieldName": "space_id",
+                    "displayName": "Space ID"
+                  },
+                  {
+                    "fieldName": "genie_link",
+                    "columnWidth": 500,
+                    "displayName": "Genie URL"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 12,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "e0aa7595",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## AI/BI Genie Dashboard"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "a88a4bb1",
+            "multilineTextboxSpec": {
+              "lines": [
+                "Enterprise-wide Genie usage analytics powered by Databricks system tables."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 1
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "executive_summary",
+      "displayName": "Trends",
+      "layout": [
+        {
+          "widget": {
+            "name": "title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Usage Trends"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi-active-users",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "2044235c",
+                  "fields": [
+                    {
+                      "name": "monthly(event_month)",
+                      "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
+                    },
+                    {
+                      "name": "active_users",
+                      "expression": "`active_users`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Total Active Users"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "active_users",
+                  "displayName": "Active Users"
+                },
+                "period": {
+                  "fieldName": "monthly(event_month)"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi-total-questions",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "2044235c",
+                  "fields": [
+                    {
+                      "name": "monthly(event_month)",
+                      "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
+                    },
+                    {
+                      "name": "questions_asked",
+                      "expression": "`questions_asked`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Questions Asked"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "questions_asked",
+                  "style": {
+                    "color": {
+                      "themeColorType": "visualizationColors",
+                      "position": 3
+                    }
+                  },
+                  "displayName": "Total Questions"
+                },
+                "period": {
+                  "fieldName": "monthly(event_month)"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi-feedback-events",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "2044235c",
+                  "fields": [
+                    {
+                      "name": "monthly(event_month)",
+                      "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
+                    },
+                    {
+                      "name": "feedback_events",
+                      "expression": "`feedback_events`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Feedback Submitted"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "feedback_events",
+                  "style": {
+                    "color": {
+                      "themeColorType": "visualizationColors",
+                      "position": 6
+                    }
+                  },
+                  "displayName": "Feedback Events"
+                },
+                "period": {
+                  "fieldName": "monthly(event_month)"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "7d107d6f",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "2044235c",
+                  "fields": [
+                    {
+                      "name": "monthly(event_month)",
+                      "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
+                    },
+                    {
+                      "name": "spaces_created",
+                      "expression": "`spaces_created`"
+                    }
+                  ],
+                  "disaggregated": true,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Spaces Created"
+              },
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "spaces_created",
+                  "style": {
+                    "color": {
+                      "themeColorType": "visualizationColors",
+                      "position": 1
+                    }
+                  },
+                  "displayName": "Active Users"
+                },
+                "period": {
+                  "fieldName": "monthly(event_month)"
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 2,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "58054c61",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Daily Trends"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 30,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "date",
+            "queries": [
+              {
+                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bfc565516b88ae4fa3f0fcd9ca7_event_month",
+                "query": {
+                  "datasetName": "2044235c",
+                  "fields": [
+                    {
+                      "name": "event_month",
+                      "expression": "`event_month`"
+                    },
+                    {
+                      "name": "event_month_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd1123eae74e11dd4267160_event_month",
+                "query": {
+                  "datasetName": "ds_exec_summary",
+                  "fields": [
+                    {
+                      "name": "event_month",
+                      "expression": "`event_month`"
+                    },
+                    {
+                      "name": "event_month_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Month"
+              },
+              "disallowAll": false,
+              "style": {
+                "fontColor": {
+                  "light": "#572F2F"
+                }
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "event_month",
+                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bfc565516b88ae4fa3f0fcd9ca7_event_month"
+                  },
+                  {
+                    "fieldName": "event_month",
+                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd1123eae74e11dd4267160_event_month"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "d777a661",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Monthly Snapshot"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "f2e13a54",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Weekly Trends"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 17,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "7e40545d",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_exec_summary",
+                  "fields": [
+                    {
+                      "name": "event_date",
+                      "expression": "`event_date`"
+                    },
+                    {
+                      "name": "spaces_created",
+                      "expression": "`spaces_created`"
+                    },
+                    {
+                      "name": "questions_asked",
+                      "expression": "`questions_asked`"
+                    },
+                    {
+                      "name": "feedback_events",
+                      "expression": "`feedback_events`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Genie Interactions"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 1
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "event_date",
+                  "displayName": "Date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "primary": {
+                    "fields": [
+                      {
+                        "fieldName": "spaces_created",
+                        "displayName": "Spaces Created"
+                      },
+                      {
+                        "fieldName": "questions_asked",
+                        "displayName": "Questions Asked"
+                      },
+                      {
+                        "fieldName": "feedback_events",
+                        "displayName": "Feedback Submitted"
+                      }
+                    ],
+                    "scale": {
+                      "type": "quantitative",
+                      "domain": {
+                        "min": 0
+                      },
+                      "reverse": false
+                    },
+                    "axis": {
+                      "hideTitle": false,
+                      "title": "Genie Events"
+                    }
+                  },
+                  "secondary": {
+                    "fields": [],
+                    "scale": {
+                      "type": "quantitative",
+                      "domain": {
+                        "min": 0
+                      }
+                    },
+                    "axis": {
+                      "title": "Genie Events"
+                    }
+                  }
+                },
+                "color": {
+                  "legend": {
+                    "position": "bottom"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 37,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "active-users1",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_exec_summary",
+                  "fields": [
+                    {
+                      "name": "event_date",
+                      "expression": "`event_date`"
+                    },
+                    {
+                      "name": "active_users",
+                      "expression": "`active_users`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Active Users"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "event_date",
+                  "displayName": "Date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "active_users",
+                  "displayName": "Active Users",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 31,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "2d108e33",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "2044235c",
+                  "fields": [
+                    {
+                      "name": "event_month",
+                      "expression": "`event_month`"
+                    },
+                    {
+                      "name": "active_users",
+                      "expression": "`active_users`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Active Users"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "event_month",
+                  "displayName": "Date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "active_users",
+                  "displayName": "Active Users",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "7e50e874",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "3a1ba22e",
+                  "fields": [
+                    {
+                      "name": "event_week",
+                      "expression": "`event_week`"
+                    },
+                    {
+                      "name": "spaces_created",
+                      "expression": "`spaces_created`"
+                    },
+                    {
+                      "name": "questions_asked",
+                      "expression": "`questions_asked`"
+                    },
+                    {
+                      "name": "feedback_events",
+                      "expression": "`feedback_events`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Genie Interactions"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 1
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "event_week",
+                  "displayName": "Date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "primary": {
+                    "fields": [
+                      {
+                        "fieldName": "spaces_created",
+                        "displayName": "Spaces Created"
+                      },
+                      {
+                        "fieldName": "questions_asked",
+                        "displayName": "Questions Asked"
+                      },
+                      {
+                        "fieldName": "feedback_events",
+                        "displayName": "Feedback Submitted"
+                      }
+                    ],
+                    "scale": {
+                      "type": "quantitative",
+                      "domain": {
+                        "min": 0
+                      },
+                      "reverse": false
+                    },
+                    "axis": {
+                      "hideTitle": false,
+                      "title": "Genie Events"
+                    }
+                  },
+                  "secondary": {
+                    "fields": [],
+                    "scale": {
+                      "type": "quantitative",
+                      "domain": {
+                        "min": 0
+                      }
+                    },
+                    "axis": {
+                      "title": "Genie Events"
+                    }
+                  }
+                },
+                "color": {
+                  "legend": {
+                    "position": "bottom"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 24,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "36608b85",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "3a1ba22e",
+                  "fields": [
+                    {
+                      "name": "event_week",
+                      "expression": "`event_week`"
+                    },
+                    {
+                      "name": "active_users",
+                      "expression": "`active_users`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Active Users"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 2
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 4
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 5
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "event_week",
+                  "displayName": "Date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "active_users",
+                  "displayName": "Active Users",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 18,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "5691436d",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "2044235c",
+                  "fields": [
+                    {
+                      "name": "event_month",
+                      "expression": "`event_month`"
+                    },
+                    {
+                      "name": "spaces_created",
+                      "expression": "`spaces_created`"
+                    },
+                    {
+                      "name": "questions_asked",
+                      "expression": "`questions_asked`"
+                    },
+                    {
+                      "name": "feedback_events",
+                      "expression": "`feedback_events`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Genie Interactions"
+              },
+              "mark": {
+                "colors": [
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 1
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 3
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 6
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 7
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 8
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 9
+                  },
+                  {
+                    "themeColorType": "visualizationColors",
+                    "position": 10
+                  }
+                ]
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "event_month",
+                  "displayName": "Date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "primary": {
+                    "fields": [
+                      {
+                        "fieldName": "spaces_created",
+                        "displayName": "Spaces Created"
+                      },
+                      {
+                        "fieldName": "questions_asked",
+                        "displayName": "Questions Asked"
+                      },
+                      {
+                        "fieldName": "feedback_events",
+                        "displayName": "Feedback Submitted"
+                      }
+                    ],
+                    "scale": {
+                      "type": "quantitative",
+                      "domain": {
+                        "min": 0
+                      },
+                      "reverse": false
+                    },
+                    "axis": {
+                      "hideTitle": false,
+                      "title": "Genie Events"
+                    }
+                  },
+                  "secondary": {
+                    "fields": [],
+                    "scale": {
+                      "type": "quantitative",
+                      "domain": {
+                        "min": 0
+                      }
+                    },
+                    "axis": {
+                      "title": "Genie Events"
+                    }
+                  }
+                },
+                "color": {
+                  "legend": {
+                    "position": "bottom"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "d4fb5ef7",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Monthly Trends"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 12,
+            "height": 1
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "engagement_quality",
+      "displayName": "Top Spaces and Users",
+      "layout": [
+        {
+          "widget": {
+            "name": "top-spaces-section",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Top Genie Spaces (Last 90 Days)"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "top-spaces-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_top_spaces",
+                  "fields": [
+                    {
+                      "name": "space_id",
+                      "expression": "`space_id`"
+                    },
+                    {
+                      "name": "sum(ask_question)",
+                      "expression": "SUM(`ask_question`)"
+                    },
+                    {
+                      "name": "unique_user",
+                      "expression": "`unique_user`"
+                    },
+                    {
+                      "name": "first_activity",
+                      "expression": "`first_activity`"
+                    },
+                    {
+                      "name": "last_activity",
+                      "expression": "`last_activity`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Most Active Genie Spaces"
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "space_id",
+                    "displayName": "Space ID"
+                  },
+                  {
+                    "fieldName": "sum(ask_question)",
+                    "displayName": "Ask Question"
+                  },
+                  {
+                    "fieldName": "unique_user",
+                    "displayName": "Unique Users"
+                  },
+                  {
+                    "fieldName": "first_activity",
+                    "displayName": "First Activity"
+                  },
+                  {
+                    "fieldName": "last_activity",
+                    "displayName": "Last Activity"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "user-activity-section",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Top Users by Activity"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 7,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "user-activity-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_user_activity",
+                  "fields": [
+                    {
+                      "name": "user",
+                      "expression": "`user`"
+                    },
+                    {
+                      "name": "questions_asked",
+                      "expression": "`questions_asked`"
+                    },
+                    {
+                      "name": "spaces_used",
+                      "expression": "`spaces_used`"
+                    },
+                    {
+                      "name": "first_seen",
+                      "expression": "`first_seen`"
+                    },
+                    {
+                      "name": "last_seen",
+                      "expression": "`last_seen`"
+                    },
+                    {
+                      "name": "active_span_days",
+                      "expression": "`active_span_days`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Most Active Genie Users (Last 90 Days)"
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "user",
+                    "displayName": "User"
+                  },
+                  {
+                    "fieldName": "questions_asked",
+                    "displayName": "Questions"
+                  },
+                  {
+                    "fieldName": "spaces_used",
+                    "displayName": "Spaces Used"
+                  },
+                  {
+                    "fieldName": "first_seen",
+                    "displayName": "First Seen"
+                  },
+                  {
+                    "fieldName": "last_seen",
+                    "displayName": "Last Seen"
+                  },
+                  {
+                    "fieldName": "active_span_days",
+                    "displayName": "Active Span (Days)"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "channel_breakdown",
+      "displayName": "Channel Breakdown",
+      "layout": [
+        {
+          "widget": {
+            "name": "channel-title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## How Users Interact with Genie this month"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "channel-trend-section",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Channel Evolution Over Time"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 18,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "channel-trend-chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_mau_trend",
+                  "fields": [
+                    {
+                      "name": "interaction_channel",
+                      "expression": "`interaction_channel`"
+                    },
+                    {
+                      "name": "daily(event_time_local_tz)",
+                      "expression": "DATE_TRUNC(\"DAY\", `event_time_local_tz`)"
+                    },
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`action` IN ('Ask Question')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Questions by Channel Over Time"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "daily(event_time_local_tz)",
+                  "displayName": "Day",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "count(*)",
+                  "displayName": "Questions",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "interaction_channel",
+                  "displayName": "Channel",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "Genie UI (Browser)",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 9
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 19,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "channel-detail-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_mau_trend",
+                  "fields": [
+                    {
+                      "name": "space_id",
+                      "expression": "`space_id`"
+                    },
+                    {
+                      "name": "genie_link",
+                      "expression": "`genie_link`"
+                    },
+                    {
+                      "name": "interaction_channel",
+                      "expression": "`interaction_channel`"
+                    },
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    },
+                    {
+                      "name": "countdistinct(user)",
+                      "expression": "COUNT(DISTINCT `user`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`action` IN ('Ask Question')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Which channel are questions coming from?"
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "space_id",
+                    "displayName": "Genie Space ID"
+                  },
+                  {
+                    "fieldName": "genie_link",
+                    "columnWidth": 500,
+                    "displayName": "URL"
+                  },
+                  {
+                    "fieldName": "interaction_channel",
+                    "displayName": "Interaction Channel"
+                  },
+                  {
+                    "fieldName": "count(*)",
+                    "displayName": "Total Questions"
+                  },
+                  {
+                    "fieldName": "countdistinct(user)",
+                    "displayName": "Unique Users"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 12,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "b4f678ff",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### How are people asking their Genie questions\n",
+                "\n",
+                "Breakdown by interaction channel: Genie UI, REST API, SDK, Service Principals, Model Serving, etc."
+              ],
+              "verticalAlign": "VERTICAL_ALIGN_CENTER"
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 6,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ea04131f",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Feedback Submitted"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "918350b3",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_mau_trend",
+                  "fields": [
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    },
+                    {
+                      "name": "feedback_rating",
+                      "expression": "`feedback_rating`"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`action` IN ('Provide Feedback')"
+                    },
+                    {
+                      "expression": "`action_name` IN ('updateConversationMessageFeedback')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": false,
+                "title": ""
+              },
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "count(*)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Questions"
+                },
+                "color": {
+                  "fieldName": "feedback_rating",
+                  "legend": {
+                    "position": "right"
+                  },
+                  "displayName": "Channel",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "Genie UI (Browser)",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 10
+                        }
+                      },
+                      {
+                        "value": "THUMBS_UP",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 3
+                        }
+                      },
+                      {
+                        "value": "THUMBS_DOWN",
+                        "color": {
+                          "themeColorType": "visualizationColors",
+                          "position": 4
+                        }
+                      }
+                    ]
+                  }
+                },
+                "label": {
+                  "show": true,
+                  "text": {
+                    "fieldName": "count(*)",
+                    "displayName": "Questions"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 14,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "by-genie-space",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_mau_trend",
+                  "fields": [
+                    {
+                      "name": "space_id",
+                      "expression": "`space_id`"
+                    },
+                    {
+                      "name": "workspace_url",
+                      "expression": "`workspace_url`"
+                    },
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`action` IN ('Provide Feedback')"
+                    },
+                    {
+                      "expression": "`action_name` IN ('updateConversationMessageFeedback')"
+                    }
+                  ],
+                  "cubeGroupingSets": {
+                    "sets": [
+                      {
+                        "fieldNames": [
+                          "space_id",
+                          "workspace_url"
+                        ]
+                      },
+                      {}
+                    ]
+                  },
+                  "disaggregated": false,
+                  "orders": [
+                    {
+                      "direction": "ASC",
+                      "expression": "`space_id`"
+                    },
+                    {
+                      "direction": "ASC",
+                      "expression": "`workspace_url`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "By Feedback Rating"
+              },
+              "widgetType": "pivot",
+              "encodings": {
+                "rows": [
+                  {
+                    "fieldName": "space_id",
+                    "displayName": "Genie Space ID"
+                  },
+                  {
+                    "fieldName": "workspace_url",
+                    "displayName": "URL"
+                  }
+                ],
+                "cell": {
+                  "type": "multi-cell",
+                  "fields": [
+                    {
+                      "fieldName": "count(*)",
+                      "cellType": "text",
+                      "displayName": "Questions"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 14,
+            "width": 6,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "comments",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_mau_trend",
+                  "fields": [
+                    {
+                      "name": "space_id",
+                      "expression": "`space_id`"
+                    },
+                    {
+                      "name": "event_time_local_tz",
+                      "expression": "`event_time_local_tz`"
+                    },
+                    {
+                      "name": "user",
+                      "expression": "`user`"
+                    },
+                    {
+                      "name": "genie_link",
+                      "expression": "`genie_link`"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`action` IN ('Provide Feedback')"
+                    },
+                    {
+                      "expression": "`action_name` IN ('createConversationMessage', 'createConversationMessageComment')"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Comments"
+              },
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "space_id",
+                    "displayName": "Genie Space ID"
+                  },
+                  {
+                    "fieldName": "event_time_local_tz",
+                    "displayName": "Time Submitted"
+                  },
+                  {
+                    "fieldName": "user",
+                    "displayName": "Submitted By"
+                  },
+                  {
+                    "fieldName": "genie_link",
+                    "columnWidth": 500,
+                    "displayName": "Genie Link"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 12,
+            "height": 4
+          }
+        },
+        {
+          "widget": {
+            "name": "9a79941f",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_mau_trend",
+                  "fields": [
+                    {
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
+                    },
+                    {
+                      "name": "interaction_channel",
+                      "expression": "`interaction_channel`"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`action` IN ('Ask Question')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "count(*)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Total Questions"
+                },
+                "color": {
+                  "fieldName": "interaction_channel",
+                  "legend": {
+                    "position": "right",
+                    "title": "Channel"
+                  },
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "label": {
+                  "show": true,
+                  "text": {
+                    "fieldName": "count(*)",
+                    "displayName": "Total Questions"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 1,
+            "width": 6,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "c4312e4f",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_mau_trend",
+                  "fields": [
+                    {
+                      "name": "user",
+                      "expression": "`user`"
+                    },
+                    {
+                      "name": "space_id",
+                      "expression": "`space_id`"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`action` IN ('Ask Question')"
+                    }
+                  ],
+                  "cubeGroupingSets": {
+                    "sets": [
+                      {
+                        "fieldNames": [
+                          "user",
+                          "space_id"
+                        ]
+                      },
+                      {}
+                    ]
+                  },
+                  "disaggregated": false,
+                  "orders": [
+                    {
+                      "direction": "ASC",
+                      "expression": "`user`"
+                    },
+                    {
+                      "direction": "ASC",
+                      "expression": "`space_id`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Which users are asking questions and in what space?"
+              },
+              "widgetType": "pivot",
+              "encodings": {
+                "rows": [
+                  {
+                    "fieldName": "user",
+                    "displayName": "Unique Users"
+                  },
+                  {
+                    "fieldName": "space_id",
+                    "displayName": "Genie Space ID"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 12,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "0af06244",
+      "displayName": "Global Filters",
+      "layout": [
+        {
+          "widget": {
+            "name": "workspace-id",
+            "queries": [
+              {
+                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd1123eae74e11dd4267160_event_month",
+                "query": {
+                  "datasetName": "ds_exec_summary",
+                  "fields": [
+                    {
+                      "name": "event_month",
+                      "expression": "`event_month`"
+                    },
+                    {
+                      "name": "event_month_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bfc565516b88ae4fa3f0fcd9ca7_event_month",
+                "query": {
+                  "datasetName": "2044235c",
+                  "fields": [
+                    {
+                      "name": "event_month",
+                      "expression": "`event_month`"
+                    },
+                    {
+                      "name": "event_month_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Month"
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "event_month",
+                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd1123eae74e11dd4267160_event_month"
+                  },
+                  {
+                    "fieldName": "event_month",
+                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bfc565516b88ae4fa3f0fcd9ca7_event_month"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "genie-space-id",
+            "queries": [
+              {
+                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd11264936f3191eed02b03_space_id",
+                "query": {
+                  "datasetName": "ds_mau_trend",
+                  "fields": [
+                    {
+                      "name": "space_id",
+                      "expression": "`space_id`"
+                    },
+                    {
+                      "name": "space_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd112709dc971d8c8a6d2ef_space_id",
+                "query": {
+                  "datasetName": "ds_top_spaces",
+                  "fields": [
+                    {
+                      "name": "space_id",
+                      "expression": "`space_id`"
+                    },
+                    {
+                      "name": "space_id_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Genie Space ID"
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "space_id",
+                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd11264936f3191eed02b03_space_id"
+                  },
+                  {
+                    "fieldName": "space_id",
+                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd112709dc971d8c8a6d2ef_space_id"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 1,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "user",
+            "queries": [
+              {
+                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd11264936f3191eed02b03_user",
+                "query": {
+                  "datasetName": "ds_mau_trend",
+                  "fields": [
+                    {
+                      "name": "user",
+                      "expression": "`user`"
+                    },
+                    {
+                      "name": "user_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd11273a7faca1e460b4864_user",
+                "query": {
+                  "datasetName": "ds_user_activity",
+                  "fields": [
+                    {
+                      "name": "user",
+                      "expression": "`user`"
+                    },
+                    {
+                      "name": "user_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "User"
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "user",
+                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd11264936f3191eed02b03_user"
+                  },
+                  {
+                    "fieldName": "user",
+                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd11273a7faca1e460b4864_user"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 1,
+            "height": 2
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "performance",
+      "displayName": "Query Performance",
+      "layout": [
+        {
+          "widget": {
+            "name": "perf-title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Query Performance"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "perf-subtitle",
+            "multilineTextboxSpec": {
+              "lines": [
+                "Genie-generated SQL query performance from system.query.history"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "perf-latency-chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_query_performance",
+                  "fields": [
+                    {
+                      "name": "monthly(start_time)",
+                      "expression": "DATE_TRUNC(\"MONTH\", `start_time`)"
+                    },
+                    {
+                      "name": "p50_latency_s",
+                      "expression": "`p50_latency_s`"
+                    },
+                    {
+                      "name": "p95_latency_s",
+                      "expression": "`p95_latency_s`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Query Latency Trend (P50 / P95) in seconds",
+                "showDescription": true,
+                "description": "Latency from question being asked to receiving an answer"
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "monthly(start_time)",
+                  "displayName": "Month",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "p50_latency_s",
+                      "displayName": "P50 Latency (s)"
+                    },
+                    {
+                      "fieldName": "p95_latency_s",
+                      "displayName": "P95 Latency (s)"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 8,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "perf-rates-chart",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_query_performance",
+                  "fields": [
+                    {
+                      "name": "monthly(start_time)",
+                      "expression": "DATE_TRUNC(\"MONTH\", `start_time`)"
+                    },
+                    {
+                      "name": "success_rate_pct",
+                      "expression": "`success_rate_pct`"
+                    },
+                    {
+                      "name": "cache_hit_pct",
+                      "expression": "`cache_hit_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Query Success Rate & Cache Hit Rate"
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "monthly(start_time)",
+                  "displayName": "Month",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "success_rate_pct",
+                      "displayName": "Success Rate (%)"
+                    },
+                    {
+                      "fieldName": "cache_hit_pct",
+                      "displayName": "Cache Hit Rate (%)"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 14,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "6f98d3ba",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_query_performance",
+                  "fields": [
+                    {
+                      "name": "monthly(start_time)",
+                      "expression": "DATE_TRUNC(\"MONTH\", `start_time`)"
+                    },
+                    {
+                      "name": "sum(total_queries)",
+                      "expression": "SUM(`total_queries`)"
+                    },
+                    {
+                      "name": "countdistinct(executed_by_user_id)",
+                      "expression": "COUNT(DISTINCT `executed_by_user_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "frame": {
+                "showTitle": true,
+                "title": "Monthly Query Volume"
+              },
+              "widgetType": "combo",
+              "encodings": {
+                "x": {
+                  "fieldName": "monthly(start_time)",
+                  "displayName": "Month",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "primary": {
+                    "fields": [
+                      {
+                        "fieldName": "sum(total_queries)",
+                        "displayName": "Total Queries"
+                      }
+                    ]
+                  },
+                  "secondary": {
+                    "fields": [
+                      {
+                        "fieldName": "countdistinct(executed_by_user_id)",
+                        "displayName": "Total Users"
+                      }
+                    ]
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "label": {
+                  "show": true
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {
+        "light": "#E7E7E7",
+        "dark": "#1F272D"
+      },
+      "widgetBackgroundColor": {
+        "light": "#E7E7E7",
+        "dark": "#11171C"
+      },
+      "fontColor": {
+        "light": "#000000",
+        "dark": "#E8ECF0"
+      },
+      "selectionColor": {
+        "light": "#FF5F04",
+        "dark": "#8ACAFF"
+      },
+      "widgetHeaderAlignment": "LEFT"
+    },
+    "applyModeEnabled": false
+  }
+}
