@@ -5,67 +5,65 @@
       "displayName": "Genie Metrics by Day",
       "queryLines": [
         "SELECT\n",
-        "    TO_DATE(event_date) as event_date,\n",
-        "    event_date AS event_datetime,\n",
-        "    * except (event_date)\n",
-        "FROM genie_usage_by_day"
-      ],
-      "catalog": "catalog",
-      "schema": "schema"
+        "  TO_DATE(event_date) as event_date,\n",
+        "  event_date AS event_datetime,\n",
+        "  * except (event_date)\n",
+        "FROM\n",
+        "  genie_usage_by_day"
+      ]
     },
     {
       "name": "3a1ba22e",
       "displayName": "Genie Metrics by Week",
       "queryLines": [
         "SELECT\n",
-        "    * except (event_date, event_month)\n",
-        "FROM genie_usage_by_day\n",
-        "GROUP BY ALL"
-      ],
-      "catalog": "catalog",
-      "schema": "schema"
+        "  * except (event_date, event_month)\n",
+        "FROM\n",
+        "  genie_usage_by_day\n",
+        "GROUP BY\n",
+        "  ALL"
+      ]
     },
     {
       "name": "2044235c",
       "displayName": "Genie Metrics by Month",
       "queryLines": [
         "SELECT\n",
-        "    * except (event_date, event_week)\n",
-        "FROM genie_usage_by_day\n",
-        "GROUP BY ALL"
-      ],
-      "catalog": "catalog",
-      "schema": "schema"
+        "  * except (event_date, event_week)\n",
+        "FROM\n",
+        "  genie_usage_by_day\n",
+        "GROUP BY\n",
+        "  ALL"
+      ]
     },
     {
       "name": "ds_mau_trend",
       "displayName": "Genie Details",
       "queryLines": [
-        "SELECT *\n",
-        "FROM genie_event_detail"
-      ],
-      "catalog": "catalog",
-      "schema": "schema"
+        "SELECT\n",
+        "  *\n",
+        "FROM\n",
+        "  genie_event_detail"
+      ]
     },
     {
       "name": "ds_top_spaces",
       "displayName": "Top Genie Spaces",
       "queryLines": [
         "-- Top Genie Spaces\n",
-        "SELECT\n",
-        "    DISTINCT space_id,\n",
-        "    COUNT(DISTINCT user) as unique_user,\n",
-        "    COUNT(*) as ask_question,\n",
-        "    MIN(event_time_local_tz) as first_activity,\n",
-        "    MAX(event_time_local_tz) as last_activity\n",
+        "SELECT DISTINCT\n",
+        "  space_id,\n",
+        "  COUNT(DISTINCT user) as unique_user,\n",
+        "  COUNT(*) as ask_question,\n",
+        "  MIN(event_time_local_tz) as first_activity,\n",
+        "  MAX(event_time_local_tz) as last_activity\n",
         "FROM\n",
-        "    genie_event_detail\n",
+        "  genie_event_detail\n",
         "WHERE\n",
-        "    action = 'Ask Question'\n",
-        "GROUP BY ALL;"
-      ],
-      "catalog": "catalog",
-      "schema": "schema"
+        "  action = 'Ask Question'\n",
+        "GROUP BY\n",
+        "  ALL;"
+      ]
     },
     {
       "name": "ds_user_activity",
@@ -73,23 +71,34 @@
       "queryLines": [
         "-- User Activity Detail over last 90 days\n",
         "SELECT\n",
-        "    workspace_id,\n",
-        "    TRUNC(event_time_local_tz, 'MM') as month,\n",
-        "    user,\n",
-        "    COUNT(CASE WHEN action_name IN ('createConversationMessage','genieCreateConversationMessage','genieStartConversationMessage') THEN 1 END) as questions_asked,\n",
-        "    COUNT(DISTINCT space_id) as spaces_used,\n",
-        "    MIN(event_time_local_tz) as first_seen,\n",
-        "    MAX(event_time_local_tz) as last_seen,\n",
-        "    DATEDIFF(MAX(event_time_local_tz), MIN(event_time_local_tz)) as active_span_days\n",
+        "  workspace_id,\n",
+        "  TRUNC(event_time_local_tz, 'MM') as month,\n",
+        "  user,\n",
+        "  COUNT(\n",
+        "    CASE\n",
+        "      WHEN\n",
+        "        action_name IN (\n",
+        "          'createConversationMessage',\n",
+        "          'genieCreateConversationMessage',\n",
+        "          'genieStartConversationMessage'\n",
+        "        )\n",
+        "      THEN\n",
+        "        1\n",
+        "    END\n",
+        "  ) as questions_asked,\n",
+        "  COUNT(DISTINCT space_id) as spaces_used,\n",
+        "  MIN(event_time_local_tz) as first_seen,\n",
+        "  MAX(event_time_local_tz) as last_seen,\n",
+        "  DATEDIFF(MAX(event_time_local_tz), MIN(event_time_local_tz)) as active_span_days\n",
         "FROM\n",
-        "    genie_event_detail\n",
+        "  genie_event_detail\n",
         "WHERE\n",
-        "    action = 'Ask Question'\n",
-        "GROUP BY ALL\n",
-        "ORDER BY user DESC;"
-      ],
-      "catalog": "catalog",
-      "schema": "schema"
+        "  action = 'Ask Question'\n",
+        "GROUP BY\n",
+        "  ALL\n",
+        "ORDER BY\n",
+        "  user DESC;"
+      ]
     },
     {
       "name": "ds_query_performance",
@@ -97,28 +106,52 @@
       "queryLines": [
         "-- Query Performance over last year (dynamic)\n",
         "SELECT\n",
-        "    workspace_id,\n",
-        "    start_time,\n",
-        "    executed_by_user_id,\n",
-        "    COUNT(*) as total_queries,\n",
-        "    ROUND(AVG(total_duration_ms)/1000, 0) as avg_latency_s,\n",
-        "    ROUND(PERCENTILE(total_duration_ms, 0.5)/1000, 0) as p50_latency_s,\n",
-        "    ROUND(PERCENTILE(total_duration_ms, 0.95)/1000, 0) as p95_latency_s,\n",
-        "    ROUND(SUM(CASE WHEN execution_status = 'FINISHED' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as success_rate_pct,\n",
-        "    ROUND(SUM(CASE WHEN from_result_cache THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) as cache_hit_pct\n",
-        "FROM\n",
-        "    system.query.history\n",
-        "WHERE\n",
-        "    query_source.genie_space_id IS NOT NULL\n",
-        "AND\n",
-        "    workspace_id = (\n",
-        "        SELECT workspace_id FROM genie_usage LIMIT 1\n",
+        "  workspace_id,\n",
+        "  start_time,\n",
+        "  executed_by_user_id,\n",
+        "  COUNT(*) as total_queries,\n",
+        "  ROUND(AVG(total_duration_ms) / 1000, 0) as avg_latency_s,\n",
+        "  ROUND(PERCENTILE(total_duration_ms, 0.5) / 1000, 0) as p50_latency_s,\n",
+        "  ROUND(PERCENTILE(total_duration_ms, 0.95) / 1000, 0) as p95_latency_s,\n",
+        "  ROUND(\n",
+        "    SUM(\n",
+        "      CASE\n",
+        "        WHEN execution_status = 'FINISHED' THEN 1\n",
+        "        ELSE 0\n",
+        "      END\n",
         "    )\n",
-        "GROUP BY ALL\n",
-        "ORDER BY 2;"
-      ],
-      "catalog": "catalog",
-      "schema": "schema"
+        "      * 100.0\n",
+        "      / COUNT(*),\n",
+        "    1\n",
+        "  ) as success_rate_pct,\n",
+        "  ROUND(\n",
+        "    SUM(\n",
+        "      CASE\n",
+        "        WHEN from_result_cache THEN 1\n",
+        "        ELSE 0\n",
+        "      END\n",
+        "    )\n",
+        "      * 100.0\n",
+        "      / COUNT(*),\n",
+        "    1\n",
+        "  ) as cache_hit_pct\n",
+        "FROM\n",
+        "  system.query.history\n",
+        "WHERE\n",
+        "  query_source.genie_space_id IS NOT NULL\n",
+        "  AND workspace_id\n",
+        "    = (\n",
+        "      SELECT\n",
+        "        workspace_id\n",
+        "      FROM\n",
+        "        genie_usage\n",
+        "      LIMIT 1\n",
+        "    )\n",
+        "GROUP BY\n",
+        "  ALL\n",
+        "ORDER BY\n",
+        "  2;"
+      ]
     }
   ],
   "pages": [
@@ -284,11 +317,11 @@
                       "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
                     },
                     {
-                      "name": "active_users",
-                      "expression": "`active_users`"
+                      "name": "countdistinct(active_users)",
+                      "expression": "COUNT(DISTINCT `active_users`)"
                     }
                   ],
-                  "disaggregated": true,
+                  "disaggregated": false,
                   "orders": [
                     {
                       "direction": "DESC",
@@ -307,7 +340,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "active_users",
+                  "fieldName": "countdistinct(active_users)",
                   "displayName": "Active Users"
                 },
                 "period": {
@@ -337,11 +370,11 @@
                       "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
                     },
                     {
-                      "name": "questions_asked",
-                      "expression": "`questions_asked`"
+                      "name": "countdistinct(questions_asked)",
+                      "expression": "COUNT(DISTINCT `questions_asked`)"
                     }
                   ],
-                  "disaggregated": true,
+                  "disaggregated": false,
                   "orders": [
                     {
                       "direction": "DESC",
@@ -360,7 +393,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "questions_asked",
+                  "fieldName": "countdistinct(questions_asked)",
                   "style": {
                     "color": {
                       "themeColorType": "visualizationColors",
@@ -396,11 +429,11 @@
                       "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
                     },
                     {
-                      "name": "feedback_events",
-                      "expression": "`feedback_events`"
+                      "name": "countdistinct(feedback_events)",
+                      "expression": "COUNT(DISTINCT `feedback_events`)"
                     }
                   ],
-                  "disaggregated": true,
+                  "disaggregated": false,
                   "orders": [
                     {
                       "direction": "DESC",
@@ -419,7 +452,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "feedback_events",
+                  "fieldName": "countdistinct(feedback_events)",
                   "style": {
                     "color": {
                       "themeColorType": "visualizationColors",
@@ -455,11 +488,11 @@
                       "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
                     },
                     {
-                      "name": "spaces_created",
-                      "expression": "`spaces_created`"
+                      "name": "countdistinct(spaces_created)",
+                      "expression": "COUNT(DISTINCT `spaces_created`)"
                     }
                   ],
-                  "disaggregated": true,
+                  "disaggregated": false,
                   "orders": [
                     {
                       "direction": "DESC",
@@ -478,7 +511,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "spaces_created",
+                  "fieldName": "countdistinct(spaces_created)",
                   "style": {
                     "color": {
                       "themeColorType": "visualizationColors",
