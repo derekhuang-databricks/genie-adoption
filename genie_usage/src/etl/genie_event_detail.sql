@@ -5,7 +5,7 @@ AS
 SELECT
     workspace_id,
     concat('https://', workspace_url) as workspace_url,
-    date_trunc('second', event_time) as event_time,
+    date_trunc('second', convert_timezone('UTC', 'Australia/Melbourne', event_time)) as event_time_local_tz,
     identity_metadata.run_as as user,
     from_json(response.result, 'MAP<STRING, STRING>').space_id as space_id,
     concat('https://', workspace_url, '/genie/rooms/', space_id, '?o=', workspace_id) as genie_link,
@@ -35,7 +35,7 @@ UNION
 SELECT
     workspace_id,
     concat('https://', workspace_url) as workspace_url,
-    date_trunc('second', event_time) as event_time,
+    date_trunc('second', convert_timezone('UTC', 'Australia/Melbourne', event_time)) as event_time_local_tz,
     identity_metadata.run_as as user,
     request_params.space_id,
     concat('https://', workspace_url, '/genie/rooms/', request_params.space_id, '/monitoring?o=', workspace_id, '&mc=', request_params.conversation_id) as genie_link,
@@ -66,7 +66,7 @@ UNION
 SELECT
     workspace_id,
     concat('https://', workspace_url) as workspace_url,
-    date_trunc('second', event_time) as event_time,
+    date_trunc('second', convert_timezone('UTC', 'Australia/Melbourne', event_time)) as event_time_local_tz,
     identity_metadata.run_as as user,
     request_params.space_id,
     concat('https://', workspace_url, '/genie/rooms/', request_params.space_id, '/monitoring?o=', workspace_id, '&mc=', request_params.conversation_id, '&m=', request_params.message_id) as genie_link,

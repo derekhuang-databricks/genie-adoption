@@ -4,9 +4,9 @@ AS
 WITH by_day AS (
     SELECT
         workspace_id,
-        event_date,
-        TRUNC(event_date, 'MM') as event_month,
-        TO_DATE(DATE_TRUNC('WEEK', event_date)) as event_week,
+        convert_timezone('UTC', 'Australia/Melbourne', event_date) as event_date,
+        TRUNC(convert_timezone('UTC', 'Australia/Melbourne', event_date), 'MM') as event_month,
+        TO_DATE(DATE_TRUNC('WEEK', convert_timezone('UTC', 'Australia/Melbourne', event_date))) as event_week,
         -- Metrics
         COUNT(DISTINCT identity_metadata.run_as) as active_users,
         COUNT(DISTINCT CASE WHEN action_name = 'createSpace' THEN request_params.space_id END) + COUNT(DISTINCT CASE WHEN action_name = 'genieCreateSpace' THEN request_params.space_id END) as spaces_created,

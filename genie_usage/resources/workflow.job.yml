@@ -7,8 +7,8 @@ resources:
         # Trigger to run every weekday at 9am and 1pm. (Adjust the cron expression and timezone as needed.)
         # See https://docs.databricks.com/aws/en/dev-tools/bundles/resources#jobschedule
         quartz_cron_expression: 0 0 9,13 ? * MON-FRI
-        timezone_id: UTC
-        pause_status: PAUSED
+        timezone_id: Australia/Melbourne
+        pause_status: UNPAUSED
 
       #email_notifications:
       #  on_failure:
