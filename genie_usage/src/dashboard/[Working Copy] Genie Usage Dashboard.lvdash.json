@@ -1,8 +1,20 @@
 {
   "datasets": [
     {
+      "name": "ds_mau_trend",
+      "displayName": "Genie Details",
+      "queryLines": [
+        "SELECT\n",
+        "  *,\n",
+        "  case when array_size(filter(dbx_user_groups, x -> x == 'users')) == 1 then true else false end as is_users\n",
+        "FROM\n",
+        "  genie_event_detail\n",
+        "ORDER BY event_time_local_tz DESC"
+      ]
+    },
+    {
       "name": "ds_exec_summary",
-      "displayName": "Genie Metrics by Day",
+      "displayName": "Temporal Trends - Genie Metrics by Day",
       "queryLines": [
         "SELECT\n",
         "  TO_DATE(event_date) as event_date,\n",
@@ -14,7 +26,7 @@
     },
     {
       "name": "3a1ba22e",
-      "displayName": "Genie Metrics by Week",
+      "displayName": "Temporal Trends - Genie Metrics by Week",
       "queryLines": [
         "SELECT\n",
         "  * except (event_date, event_month)\n",
@@ -26,7 +38,7 @@
     },
     {
       "name": "2044235c",
-      "displayName": "Genie Metrics by Month",
+      "displayName": "Temporal Trends - Genie Metrics by Month",
       "queryLines": [
         "SELECT\n",
         "  * except (event_date, event_week)\n",
@@ -37,43 +49,57 @@
       ]
     },
     {
-      "name": "ds_mau_trend",
-      "displayName": "Genie Details",
-      "queryLines": [
-        "SELECT\n",
-        "  *\n",
-        "FROM\n",
-        "  genie_event_detail"
-      ]
-    },
-    {
       "name": "ds_top_spaces",
-      "displayName": "Top Genie Spaces",
+      "displayName": "Popular Activity - Most Active Genie Spaces",
       "queryLines": [
-        "-- Top Genie Spaces\n",
+        "-- Most Active Genie Spaces\n",
+        "WITH genie AS (\n",
+        "  SELECT\n",
+        "    space_id,\n",
+        "    genie_link\n",
+        "  FROM genie_event_detail\n",
+        "  WHERE action = 'Create Space'\n",
+        ")\n",
         "SELECT DISTINCT\n",
-        "  space_id,\n",
-        "  COUNT(DISTINCT user) as unique_user,\n",
+        "  e.space_id,\n",
+        "  e.space_name,\n",
+        "  g.genie_link,\n",
         "  COUNT(*) as ask_question,\n",
-        "  MIN(event_time_local_tz) as first_activity,\n",
-        "  MAX(event_time_local_tz) as last_activity\n",
+        "  COUNT(DISTINCT e.dbx_user) as unique_user,\n",
+        "  MIN(e.event_time_local_tz) as first_activity,\n",
+        "  MAX(e.event_time_local_tz) as last_activity\n",
         "FROM\n",
-        "  genie_event_detail\n",
+        "  genie_event_detail e\n",
+        "LEFT JOIN\n",
+        "  genie g\n",
+        "USING\n",
+        "  (space_id)\n",
         "WHERE\n",
-        "  action = 'Ask Question'\n",
+        "  e.action = 'Ask Question'\n",
         "GROUP BY\n",
-        "  ALL;"
+        "  ALL\n",
+        "ORDER BY ask_question, unique_user;"
       ]
     },
     {
       "name": "ds_user_activity",
-      "displayName": "User Activity Detail",
+      "displayName": "Popular Activity - Top Users by Activity",
       "queryLines": [
-        "-- User Activity Detail over last 90 days\n",
+        "-- Top Users by Activity\n",
+        "-- Change <insert user group here> before deploying.\n",
         "SELECT\n",
         "  workspace_id,\n",
         "  TRUNC(event_time_local_tz, 'MM') as month,\n",
-        "  user,\n",
+        "  dbx_user_groups,\n",
+        "  case\n",
+        "    when array_size(filter(dbx_user_groups, x -> x == 'users')) == 1 then true\n",
+        "    else false\n",
+        "  end as is_users,\n",
+        "  case\n",
+        "    when array_size(filter(dbx_user_groups, x -> x == '<insert user group here>')) == 1 then true\n",
+        "    else false\n",
+        "  end as is_<insert user group here>,\n",
+        "  dbx_user,\n",
         "  COUNT(\n",
         "    CASE\n",
         "      WHEN\n",
@@ -98,6 +124,82 @@
         "  ALL\n",
         "ORDER BY\n",
         "  user DESC;"
+      ],
+      "columns": [
+        {
+          "displayName": "user_group",
+          "description": "Categorizes users as Admins, Users, or Other based on group membership",
+          "expression": "CASE WHEN `is_admins` = true THEN 'Admins' WHEN `is_users` = true THEN 'Users' ELSE 'Other' END"
+        }
+      ]
+    },
+    {
+      "name": "ds_group_comparison",
+      "displayName": "Popular Activity - Questions by User Group",
+      "queryLines": [
+        "/*\n",
+        " Questions by User Group:\n",
+        "  - Users in both groups counted in each.\n",
+        "  - To modify group, update 'base' and 'pivoted' clauses to capture the user groups you want to compare against.\n",
+        "  - One of the groups that is compared is currently 'users'. Feel free to add or change based on your specific scenario.\n",
+        "*/\n",
+        "WITH\n",
+        "    base AS (\n",
+        "        SELECT\n",
+        "          workspace_id,\n",
+        "          dbx_user_groups,\n",
+        "          dbx_user,\n",
+        "          space_id,\n",
+        "          event_time_local_tz,\n",
+        "          CASE\n",
+        "            WHEN array_contains(dbx_user_groups, 'users') THEN true\n",
+        "            ELSE false\n",
+        "          END as is_users,\n",
+        "          CASE\n",
+        "            WHEN array_contains(dbx_user_groups, '<insert user group here>') THEN true\n",
+        "            ELSE false\n",
+        "          END as is_<insert user group here>\n",
+        "        FROM\n",
+        "          genie_event_detail\n",
+        "        WHERE\n",
+        "          action = 'Ask Question'\n",
+        "    ),\n",
+        "    pivoted AS (\n",
+        "        SELECT\n",
+        "          'Users' as dbx_user_group,\n",
+        "          dbx_user,\n",
+        "          space_id,\n",
+        "          TO_DATE(event_time_local_tz) as usage_date,\n",
+        "          event_time_local_tz\n",
+        "        FROM\n",
+        "          base\n",
+        "        WHERE\n",
+        "          is_users = true\n",
+        "        UNION ALL\n",
+        "        SELECT\n",
+        "          '<insert user group here>' as dbx_user_group,\n",
+        "          dbx_user,\n",
+        "          space_id,\n",
+        "          TO_DATE(event_time_local_tz) as usage_date,\n",
+        "          event_time_local_tz\n",
+        "        FROM\n",
+        "          base\n",
+        "        WHERE\n",
+        "          is_<insert user group here> = true\n",
+        ")\n",
+        "SELECT\n",
+        "  usage_date,\n",
+        "  dbx_user_group,\n",
+        "  dbx_user,\n",
+        "  COUNT(*) as questions_asked,\n",
+        "  COUNT(DISTINCT space_id) as spaces_used,\n",
+        "  MIN(event_time_local_tz) as first_seen,\n",
+        "  MAX(event_time_local_tz) as last_seen\n",
+        "FROM\n",
+        "  pivoted\n",
+        "GROUP BY\n",
+        "  ALL\n",
+        "ORDER BY usage_date, dbx_user_group, dbx_user"
       ]
     },
     {
@@ -108,6 +210,7 @@
         "SELECT\n",
         "  workspace_id,\n",
         "  start_time,\n",
+        "  end_time,\n",
         "  executed_by_user_id,\n",
         "  COUNT(*) as total_queries,\n",
         "  ROUND(AVG(total_duration_ms) / 1000, 0) as avg_latency_s,\n",
@@ -157,24 +260,8 @@
   "pages": [
     {
       "name": "8472bc89",
-      "displayName": "Dashboard",
+      "displayName": "Genie Spaces",
       "layout": [
-        {
-          "widget": {
-            "name": "3ea94050",
-            "multilineTextboxSpec": {
-              "lines": [
-                "### List of Genie Spaces"
-              ]
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 2,
-            "width": 12,
-            "height": 1
-          }
-        },
         {
           "widget": {
             "name": "c341b231",
@@ -189,12 +276,12 @@
                       "expression": "`workspace_id`"
                     },
                     {
-                      "name": "event_time_local_tz",
-                      "expression": "`event_time_local_tz`"
+                      "name": "space_name",
+                      "expression": "`space_name`"
                     },
                     {
-                      "name": "space_id",
-                      "expression": "`space_id`"
+                      "name": "event_time_local_tz",
+                      "expression": "`event_time_local_tz`"
                     },
                     {
                       "name": "genie_link",
@@ -212,8 +299,10 @@
             ],
             "spec": {
               "version": 2,
+              "rowsPerPage": 10,
               "frame": {
-                "showTitle": false
+                "showTitle": true,
+                "title": "List of Genie Spaces"
               },
               "widgetType": "table",
               "encodings": {
@@ -223,18 +312,20 @@
                     "displayName": "Workspace ID"
                   },
                   {
+                    "fieldName": "space_name",
+                    "displayName": "Name",
+                    "actions": {
+                      "click": {
+                        "type": "link",
+                        "urlTemplate": "{{ genie_link }}",
+                        "openInNewTab": true
+                      }
+                    }
+                  },
+                  {
                     "fieldName": "event_time_local_tz",
                     "headerTooltip": "Australia/Melbourne timezone",
                     "displayName": "Created Day/Time"
-                  },
-                  {
-                    "fieldName": "space_id",
-                    "displayName": "Space ID"
-                  },
-                  {
-                    "fieldName": "genie_link",
-                    "columnWidth": 500,
-                    "displayName": "Genie URL"
                   }
                 ]
               }
@@ -244,7 +335,7 @@
             "x": 0,
             "y": 3,
             "width": 12,
-            "height": 4
+            "height": 7
           }
         },
         {
@@ -252,7 +343,7 @@
             "name": "e0aa7595",
             "multilineTextboxSpec": {
               "lines": [
-                "## AI/BI Genie Dashboard"
+                "## List of Genie Spaces"
               ]
             }
           },
@@ -268,13 +359,860 @@
             "name": "a88a4bb1",
             "multilineTextboxSpec": {
               "lines": [
-                "Enterprise-wide Genie usage analytics powered by Databricks system tables."
+                "Enterprise-wide Genie usage analytics, powered by Databricks system tables."
               ]
             }
           },
           "position": {
             "x": 0,
             "y": 1,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "space-id",
+            "queries": [
+              {
+                "name": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d13a7ac711a3fd12b6515_space_name",
+                "query": {
+                  "datasetName": "ds_mau_trend",
+                  "fields": [
+                    {
+                      "name": "space_name",
+                      "expression": "`space_name`"
+                    },
+                    {
+                      "name": "space_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Genie Space"
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "space_name",
+                    "queryName": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d13a7ac711a3fd12b6515_space_name"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "0fefa163",
+            "queries": [
+              {
+                "name": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d13a7ac711a3fd12b6515_user",
+                "query": {
+                  "datasetName": "ds_mau_trend",
+                  "fields": [
+                    {
+                      "name": "user",
+                      "expression": "`user`"
+                    },
+                    {
+                      "name": "user_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "User"
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "user",
+                    "queryName": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d13a7ac711a3fd12b6515_user"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 6,
+            "height": 1
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "engagement_quality",
+      "displayName": "Popular Activity",
+      "layout": [
+        {
+          "widget": {
+            "name": "top-spaces-section",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Top Genie Spaces (Last 90 Days)"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "top-spaces-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_top_spaces",
+                  "fields": [
+                    {
+                      "name": "space_name",
+                      "expression": "`space_name`"
+                    },
+                    {
+                      "name": "sum(ask_question)",
+                      "expression": "SUM(`ask_question`)"
+                    },
+                    {
+                      "name": "unique_user",
+                      "expression": "`unique_user`"
+                    },
+                    {
+                      "name": "first_activity",
+                      "expression": "`first_activity`"
+                    },
+                    {
+                      "name": "last_activity",
+                      "expression": "`last_activity`"
+                    },
+                    {
+                      "name": "genie_link",
+                      "expression": "`genie_link`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Most Active Genie Spaces"
+              },
+              "rowsPerPage": 10,
+              "freezeUpToColumnNumber": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "space_name",
+                    "displayName": "Space ID",
+                    "actions": {
+                      "click": {
+                        "type": "link",
+                        "urlTemplate": "{{ genie_link }}",
+                        "openInNewTab": true
+                      }
+                    }
+                  },
+                  {
+                    "fieldName": "sum(ask_question)",
+                    "displayName": "Ask Question"
+                  },
+                  {
+                    "fieldName": "unique_user",
+                    "displayName": "Unique Users"
+                  },
+                  {
+                    "fieldName": "first_activity",
+                    "displayName": "First Activity"
+                  },
+                  {
+                    "fieldName": "last_activity",
+                    "displayName": "Last Activity"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 12,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "user-activity-section",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Top Users by Activity"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 10,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "user-activity-table",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_user_activity",
+                  "fields": [
+                    {
+                      "name": "dbx_user",
+                      "expression": "`dbx_user`"
+                    },
+                    {
+                      "name": "questions_asked",
+                      "expression": "`questions_asked`"
+                    },
+                    {
+                      "name": "spaces_used",
+                      "expression": "`spaces_used`"
+                    },
+                    {
+                      "name": "first_seen",
+                      "expression": "`first_seen`"
+                    },
+                    {
+                      "name": "last_seen",
+                      "expression": "`last_seen`"
+                    },
+                    {
+                      "name": "active_span_days",
+                      "expression": "`active_span_days`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Most Active Genie Users (Last 90 Days)"
+              },
+              "rowsPerPage": 10,
+              "freezeUpToColumnNumber": 1,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "dbx_user",
+                    "displayName": "User"
+                  },
+                  {
+                    "fieldName": "questions_asked",
+                    "displayName": "Questions"
+                  },
+                  {
+                    "fieldName": "spaces_used",
+                    "displayName": "Spaces Used"
+                  },
+                  {
+                    "fieldName": "first_seen",
+                    "displayName": "First Seen"
+                  },
+                  {
+                    "fieldName": "last_seen",
+                    "displayName": "Last Seen"
+                  },
+                  {
+                    "fieldName": "active_span_days",
+                    "displayName": "Active Span (Days)"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 12,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "3ef688c6",
+            "queries": [
+              {
+                "name": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d13ab9cdf46d51a934061_space_name",
+                "query": {
+                  "datasetName": "ds_top_spaces",
+                  "fields": [
+                    {
+                      "name": "space_name",
+                      "expression": "`space_name`"
+                    },
+                    {
+                      "name": "space_name_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Genie Space"
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "space_name",
+                    "queryName": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d13ab9cdf46d51a934061_space_name"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 1,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "f054d8e3",
+            "queries": [
+              {
+                "name": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d13afb844bdc681464035_dbx_user",
+                "query": {
+                  "datasetName": "ds_user_activity",
+                  "fields": [
+                    {
+                      "name": "dbx_user",
+                      "expression": "`dbx_user`"
+                    },
+                    {
+                      "name": "dbx_user_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "User"
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "dbx_user",
+                    "queryName": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d13afb844bdc681464035_dbx_user"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "group_section",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Questions by User Group"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 20,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "group_monthly_trend",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_group_comparison",
+                  "fields": [
+                    {
+                      "name": "dbx_user_group",
+                      "expression": "`dbx_user_group`"
+                    },
+                    {
+                      "name": "monthly(usage_date)",
+                      "expression": "DATE_TRUNC(\"MONTH\", `usage_date`)"
+                    },
+                    {
+                      "name": "sum(questions_asked)",
+                      "expression": "SUM(`questions_asked`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Monthly View"
+              },
+              "mark": {
+                "layout": "group"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "monthly(usage_date)",
+                  "displayName": "Date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(questions_asked)",
+                  "displayName": "Questions Asked",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "dbx_user_group",
+                  "displayName": "User Group",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 30,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "6a119751",
+            "queries": [
+              {
+                "name": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f1551d78f515d2af6c912d6a0f5bd5_dbx_user_group",
+                "query": {
+                  "datasetName": "ds_group_comparison",
+                  "fields": [
+                    {
+                      "name": "dbx_user_group",
+                      "expression": "`dbx_user_group`"
+                    },
+                    {
+                      "name": "dbx_user_group_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "User Group"
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "dbx_user_group",
+                    "queryName": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f1551d78f515d2af6c912d6a0f5bd5_dbx_user_group"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 21,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "f6b2344b",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_group_comparison",
+                  "fields": [
+                    {
+                      "name": "dbx_user_group",
+                      "expression": "`dbx_user_group`"
+                    },
+                    {
+                      "name": "weekly(usage_date)",
+                      "expression": "DATE_TRUNC(\"WEEK\", `usage_date`)"
+                    },
+                    {
+                      "name": "sum(questions_asked)",
+                      "expression": "SUM(`questions_asked`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Weekly View"
+              },
+              "mark": {
+                "layout": "group"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "weekly(usage_date)",
+                  "displayName": "Date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(questions_asked)",
+                  "displayName": "Questions Asked",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "dbx_user_group",
+                  "displayName": "User Group",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 30,
+            "width": 6,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "43d02266",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_group_comparison",
+                  "fields": [
+                    {
+                      "name": "dbx_user_group",
+                      "expression": "`dbx_user_group`"
+                    },
+                    {
+                      "name": "daily(usage_date)",
+                      "expression": "DATE_TRUNC(\"DAY\", `usage_date`)"
+                    },
+                    {
+                      "name": "sum(questions_asked)",
+                      "expression": "SUM(`questions_asked`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Daily View"
+              },
+              "mark": {
+                "layout": "group"
+              },
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "daily(usage_date)",
+                  "displayName": "Date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "sum(questions_asked)",
+                  "displayName": "Questions Asked",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "dbx_user_group",
+                  "displayName": "User Group",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 37,
+            "width": 12,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "1d165cdb",
+            "queries": [
+              {
+                "name": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f1551d78f515d2af6c912d6a0f5bd5_dbx_user",
+                "query": {
+                  "datasetName": "ds_group_comparison",
+                  "fields": [
+                    {
+                      "name": "dbx_user",
+                      "expression": "`dbx_user`"
+                    },
+                    {
+                      "name": "dbx_user_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "User"
+              },
+              "widgetType": "filter-single-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "dbx_user",
+                    "queryName": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f1551d78f515d2af6c912d6a0f5bd5_dbx_user"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 21,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "2eded264",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_group_comparison",
+                  "fields": [
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "dbx_user_group",
+                      "expression": "`dbx_user_group`"
+                    },
+                    {
+                      "name": "dbx_user",
+                      "expression": "`dbx_user`"
+                    },
+                    {
+                      "name": "spaces_used",
+                      "expression": "`spaces_used`"
+                    },
+                    {
+                      "name": "questions_asked",
+                      "expression": "`questions_asked`"
+                    },
+                    {
+                      "name": "first_seen",
+                      "expression": "`first_seen`"
+                    },
+                    {
+                      "name": "last_seen",
+                      "expression": "`last_seen`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "usage_date",
+                    "displayName": "Usage Date"
+                  },
+                  {
+                    "fieldName": "dbx_user_group",
+                    "displayName": "User Group"
+                  },
+                  {
+                    "fieldName": "dbx_user",
+                    "displayName": "User"
+                  },
+                  {
+                    "fieldName": "spaces_used",
+                    "displayName": "# Spaces Used"
+                  },
+                  {
+                    "fieldName": "questions_asked",
+                    "displayName": "# Questions Asked"
+                  },
+                  {
+                    "fieldName": "first_seen",
+                    "displayName": "First Seen"
+                  },
+                  {
+                    "fieldName": "last_seen",
+                    "displayName": "Last Seen"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 23,
+            "width": 12,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "2f94f44a",
+            "queries": [
+              {
+                "name": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f1551d78f515d2af6c912d6a0f5bd5_usage_date",
+                "query": {
+                  "datasetName": "ds_group_comparison",
+                  "fields": [
+                    {
+                      "name": "usage_date",
+                      "expression": "`usage_date`"
+                    },
+                    {
+                      "name": "usage_date_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Usage Date"
+              },
+              "selection": {
+                "defaultSelection": {
+                  "operator": {
+                    "operator": "AND",
+                    "args": []
+                  }
+                }
+              },
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "usage_date",
+                    "queryName": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f1551d78f515d2af6c912d6a0f5bd5_usage_date"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 22,
             "width": 12,
             "height": 1
           }
@@ -285,14 +1223,14 @@
     },
     {
       "name": "executive_summary",
-      "displayName": "Trends",
+      "displayName": "Temporal Trends",
       "layout": [
         {
           "widget": {
             "name": "title",
             "multilineTextboxSpec": {
               "lines": [
-                "## Usage Trends"
+                "## Usage Trends for {{ filter:date }} "
               ]
             }
           },
@@ -317,11 +1255,11 @@
                       "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
                     },
                     {
-                      "name": "countdistinct(active_users)",
-                      "expression": "COUNT(DISTINCT `active_users`)"
+                      "name": "active_users",
+                      "expression": "`active_users`"
                     }
                   ],
-                  "disaggregated": false,
+                  "disaggregated": true,
                   "orders": [
                     {
                       "direction": "DESC",
@@ -340,7 +1278,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "countdistinct(active_users)",
+                  "fieldName": "active_users",
                   "displayName": "Active Users"
                 },
                 "period": {
@@ -351,7 +1289,7 @@
           },
           "position": {
             "x": 0,
-            "y": 2,
+            "y": 1,
             "width": 3,
             "height": 2
           }
@@ -370,11 +1308,11 @@
                       "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
                     },
                     {
-                      "name": "countdistinct(questions_asked)",
-                      "expression": "COUNT(DISTINCT `questions_asked`)"
+                      "name": "questions_asked",
+                      "expression": "`questions_asked`"
                     }
                   ],
-                  "disaggregated": false,
+                  "disaggregated": true,
                   "orders": [
                     {
                       "direction": "DESC",
@@ -393,7 +1331,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "countdistinct(questions_asked)",
+                  "fieldName": "questions_asked",
                   "style": {
                     "color": {
                       "themeColorType": "visualizationColors",
@@ -410,7 +1348,7 @@
           },
           "position": {
             "x": 6,
-            "y": 2,
+            "y": 1,
             "width": 3,
             "height": 2
           }
@@ -429,11 +1367,11 @@
                       "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
                     },
                     {
-                      "name": "countdistinct(feedback_events)",
-                      "expression": "COUNT(DISTINCT `feedback_events`)"
+                      "name": "feedback_events",
+                      "expression": "`feedback_events`"
                     }
                   ],
-                  "disaggregated": false,
+                  "disaggregated": true,
                   "orders": [
                     {
                       "direction": "DESC",
@@ -452,7 +1390,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "countdistinct(feedback_events)",
+                  "fieldName": "feedback_events",
                   "style": {
                     "color": {
                       "themeColorType": "visualizationColors",
@@ -469,7 +1407,7 @@
           },
           "position": {
             "x": 9,
-            "y": 2,
+            "y": 1,
             "width": 3,
             "height": 2
           }
@@ -488,11 +1426,11 @@
                       "expression": "DATE_TRUNC(\"MONTH\", `event_month`)"
                     },
                     {
-                      "name": "countdistinct(spaces_created)",
-                      "expression": "COUNT(DISTINCT `spaces_created`)"
+                      "name": "spaces_created",
+                      "expression": "`spaces_created`"
                     }
                   ],
-                  "disaggregated": false,
+                  "disaggregated": true,
                   "orders": [
                     {
                       "direction": "DESC",
@@ -511,7 +1449,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "countdistinct(spaces_created)",
+                  "fieldName": "spaces_created",
                   "style": {
                     "color": {
                       "themeColorType": "visualizationColors",
@@ -528,7 +1466,7 @@
           },
           "position": {
             "x": 3,
-            "y": 2,
+            "y": 1,
             "width": 3,
             "height": 2
           }
@@ -544,7 +1482,7 @@
           },
           "position": {
             "x": 0,
-            "y": 30,
+            "y": 31,
             "width": 12,
             "height": 1
           }
@@ -554,26 +1492,9 @@
             "name": "date",
             "queries": [
               {
-                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bfc565516b88ae4fa3f0fcd9ca7_event_month",
+                "name": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d13a3a4f926c083039e51_event_month",
                 "query": {
                   "datasetName": "2044235c",
-                  "fields": [
-                    {
-                      "name": "event_month",
-                      "expression": "`event_month`"
-                    },
-                    {
-                      "name": "event_month_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd1123eae74e11dd4267160_event_month",
-                "query": {
-                  "datasetName": "ds_exec_summary",
                   "fields": [
                     {
                       "name": "event_month",
@@ -594,46 +1515,20 @@
                 "showTitle": true,
                 "title": "Month"
               },
-              "disallowAll": false,
-              "style": {
-                "fontColor": {
-                  "light": "#572F2F"
-                }
-              },
-              "widgetType": "filter-single-select",
+              "widgetType": "filter-date-picker",
               "encodings": {
                 "fields": [
                   {
                     "fieldName": "event_month",
-                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bfc565516b88ae4fa3f0fcd9ca7_event_month"
-                  },
-                  {
-                    "fieldName": "event_month",
-                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd1123eae74e11dd4267160_event_month"
+                    "queryName": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d13a3a4f926c083039e51_event_month"
                   }
                 ]
               }
             }
           },
           "position": {
-            "x": 6,
-            "y": 0,
-            "width": 6,
-            "height": 1
-          }
-        },
-        {
-          "widget": {
-            "name": "d777a661",
-            "multilineTextboxSpec": {
-              "lines": [
-                "### Monthly Snapshot"
-              ]
-            }
-          },
-          "position": {
             "x": 0,
-            "y": 1,
+            "y": 4,
             "width": 12,
             "height": 1
           }
@@ -794,7 +1689,7 @@
           },
           "position": {
             "x": 0,
-            "y": 37,
+            "y": 39,
             "width": 12,
             "height": 6
           }
@@ -892,7 +1787,7 @@
           },
           "position": {
             "x": 0,
-            "y": 31,
+            "y": 33,
             "width": 12,
             "height": 6
           }
@@ -1135,7 +2030,7 @@
           },
           "position": {
             "x": 0,
-            "y": 24,
+            "y": 25,
             "width": 12,
             "height": 6
           }
@@ -1233,7 +2128,7 @@
           },
           "position": {
             "x": 0,
-            "y": 18,
+            "y": 19,
             "width": 12,
             "height": 6
           }
@@ -1394,63 +2289,27 @@
           },
           "position": {
             "x": 0,
-            "y": 4,
-            "width": 12,
-            "height": 1
-          }
-        }
-      ],
-      "pageType": "PAGE_TYPE_CANVAS",
-      "layoutVersion": "GRID_V1"
-    },
-    {
-      "name": "engagement_quality",
-      "displayName": "Top Spaces and Users",
-      "layout": [
-        {
-          "widget": {
-            "name": "top-spaces-section",
-            "multilineTextboxSpec": {
-              "lines": [
-                "### Top Genie Spaces (Last 90 Days)"
-              ]
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 0,
+            "y": 3,
             "width": 12,
             "height": 1
           }
         },
         {
           "widget": {
-            "name": "top-spaces-table",
+            "name": "f6610b8b",
             "queries": [
               {
-                "name": "main_query",
+                "name": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d139f83abde42add16487_event_week",
                 "query": {
-                  "datasetName": "ds_top_spaces",
+                  "datasetName": "3a1ba22e",
                   "fields": [
                     {
-                      "name": "space_id",
-                      "expression": "`space_id`"
+                      "name": "event_week",
+                      "expression": "`event_week`"
                     },
                     {
-                      "name": "sum(ask_question)",
-                      "expression": "SUM(`ask_question`)"
-                    },
-                    {
-                      "name": "unique_user",
-                      "expression": "`unique_user`"
-                    },
-                    {
-                      "name": "first_activity",
-                      "expression": "`first_activity`"
-                    },
-                    {
-                      "name": "last_activity",
-                      "expression": "`last_activity`"
+                      "name": "event_week_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
                     }
                   ],
                   "disaggregated": false
@@ -1461,30 +2320,14 @@
               "version": 2,
               "frame": {
                 "showTitle": true,
-                "title": "Most Active Genie Spaces"
+                "title": "Week"
               },
-              "widgetType": "table",
+              "widgetType": "filter-date-range-picker",
               "encodings": {
-                "columns": [
+                "fields": [
                   {
-                    "fieldName": "space_id",
-                    "displayName": "Space ID"
-                  },
-                  {
-                    "fieldName": "sum(ask_question)",
-                    "displayName": "Ask Question"
-                  },
-                  {
-                    "fieldName": "unique_user",
-                    "displayName": "Unique Users"
-                  },
-                  {
-                    "fieldName": "first_activity",
-                    "displayName": "First Activity"
-                  },
-                  {
-                    "fieldName": "last_activity",
-                    "displayName": "Last Activity"
+                    "fieldName": "event_week",
+                    "queryName": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d139f83abde42add16487_event_week"
                   }
                 ]
               }
@@ -1492,62 +2335,30 @@
           },
           "position": {
             "x": 0,
-            "y": 1,
-            "width": 12,
-            "height": 6
-          }
-        },
-        {
-          "widget": {
-            "name": "user-activity-section",
-            "multilineTextboxSpec": {
-              "lines": [
-                "### Top Users by Activity"
-              ]
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 7,
+            "y": 18,
             "width": 12,
             "height": 1
           }
         },
         {
           "widget": {
-            "name": "user-activity-table",
+            "name": "48a5deba",
             "queries": [
               {
-                "name": "main_query",
+                "name": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d1383be409646928f0284_event_date",
                 "query": {
-                  "datasetName": "ds_user_activity",
+                  "datasetName": "ds_exec_summary",
                   "fields": [
                     {
-                      "name": "user",
-                      "expression": "`user`"
+                      "name": "event_date",
+                      "expression": "`event_date`"
                     },
                     {
-                      "name": "questions_asked",
-                      "expression": "`questions_asked`"
-                    },
-                    {
-                      "name": "spaces_used",
-                      "expression": "`spaces_used`"
-                    },
-                    {
-                      "name": "first_seen",
-                      "expression": "`first_seen`"
-                    },
-                    {
-                      "name": "last_seen",
-                      "expression": "`last_seen`"
-                    },
-                    {
-                      "name": "active_span_days",
-                      "expression": "`active_span_days`"
+                      "name": "event_date_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
                     }
                   ],
-                  "disaggregated": true
+                  "disaggregated": false
                 }
               }
             ],
@@ -1555,34 +2366,14 @@
               "version": 2,
               "frame": {
                 "showTitle": true,
-                "title": "Most Active Genie Users (Last 90 Days)"
+                "title": "Day"
               },
-              "widgetType": "table",
+              "widgetType": "filter-date-range-picker",
               "encodings": {
-                "columns": [
+                "fields": [
                   {
-                    "fieldName": "user",
-                    "displayName": "User"
-                  },
-                  {
-                    "fieldName": "questions_asked",
-                    "displayName": "Questions"
-                  },
-                  {
-                    "fieldName": "spaces_used",
-                    "displayName": "Spaces Used"
-                  },
-                  {
-                    "fieldName": "first_seen",
-                    "displayName": "First Seen"
-                  },
-                  {
-                    "fieldName": "last_seen",
-                    "displayName": "Last Seen"
-                  },
-                  {
-                    "fieldName": "active_span_days",
-                    "displayName": "Active Span (Days)"
+                    "fieldName": "event_date",
+                    "queryName": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d1383be409646928f0284_event_date"
                   }
                 ]
               }
@@ -1590,9 +2381,9 @@
           },
           "position": {
             "x": 0,
-            "y": 8,
+            "y": 32,
             "width": 12,
-            "height": 6
+            "height": 1
           }
         }
       ],
@@ -1624,13 +2415,13 @@
             "name": "channel-trend-section",
             "multilineTextboxSpec": {
               "lines": [
-                "### Channel Evolution Over Time"
+                "### By Channel"
               ]
             }
           },
           "position": {
             "x": 0,
-            "y": 18,
+            "y": 26,
             "width": 12,
             "height": 1
           }
@@ -1709,7 +2500,7 @@
           },
           "position": {
             "x": 0,
-            "y": 19,
+            "y": 27,
             "width": 12,
             "height": 6
           }
@@ -1724,24 +2515,24 @@
                   "datasetName": "ds_mau_trend",
                   "fields": [
                     {
-                      "name": "space_id",
-                      "expression": "`space_id`"
-                    },
-                    {
-                      "name": "genie_link",
-                      "expression": "`genie_link`"
-                    },
-                    {
                       "name": "interaction_channel",
                       "expression": "`interaction_channel`"
+                    },
+                    {
+                      "name": "space_name",
+                      "expression": "`space_name`"
                     },
                     {
                       "name": "count(*)",
                       "expression": "COUNT(`*`)"
                     },
                     {
-                      "name": "countdistinct(user)",
-                      "expression": "COUNT(DISTINCT `user`)"
+                      "name": "countdistinct(dbx_user)",
+                      "expression": "COUNT(DISTINCT `dbx_user`)"
+                    },
+                    {
+                      "name": "genie_link",
+                      "expression": "`genie_link`"
                     }
                   ],
                   "filters": [
@@ -1763,25 +2554,31 @@
               "encodings": {
                 "columns": [
                   {
-                    "fieldName": "space_id",
-                    "displayName": "Genie Space ID"
-                  },
-                  {
-                    "fieldName": "genie_link",
-                    "columnWidth": 500,
-                    "displayName": "URL"
-                  },
-                  {
                     "fieldName": "interaction_channel",
                     "displayName": "Interaction Channel"
+                  },
+                  {
+                    "fieldName": "space_name",
+                    "displayName": "Genie Space"
                   },
                   {
                     "fieldName": "count(*)",
                     "displayName": "Total Questions"
                   },
                   {
-                    "fieldName": "countdistinct(user)",
+                    "fieldName": "countdistinct(dbx_user)",
                     "displayName": "Unique Users"
+                  },
+                  {
+                    "fieldName": "genie_link",
+                    "columnWidth": 200,
+                    "displayName": "URL",
+                    "actions": {
+                      "click": {
+                        "type": "link",
+                        "urlTemplate": "{{ genie_link }}"
+                      }
+                    }
                   }
                 ]
               }
@@ -1789,7 +2586,7 @@
           },
           "position": {
             "x": 0,
-            "y": 4,
+            "y": 7,
             "width": 12,
             "height": 5
           }
@@ -1809,8 +2606,8 @@
           "position": {
             "x": 0,
             "y": 1,
-            "width": 6,
-            "height": 3
+            "width": 12,
+            "height": 2
           }
         },
         {
@@ -1824,7 +2621,7 @@
           },
           "position": {
             "x": 0,
-            "y": 9,
+            "y": 12,
             "width": 12,
             "height": 1
           }
@@ -1919,7 +2716,7 @@
           },
           "position": {
             "x": 6,
-            "y": 14,
+            "y": 22,
             "width": 6,
             "height": 4
           }
@@ -1934,16 +2731,20 @@
                   "datasetName": "ds_mau_trend",
                   "fields": [
                     {
-                      "name": "space_id",
-                      "expression": "`space_id`"
+                      "name": "space_name",
+                      "expression": "`space_name`"
+                    },
+                    {
+                      "name": "feedback_rating",
+                      "expression": "`feedback_rating`"
+                    },
+                    {
+                      "name": "genie_link",
+                      "expression": "`genie_link`"
                     },
                     {
                       "name": "workspace_url",
                       "expression": "`workspace_url`"
-                    },
-                    {
-                      "name": "count(*)",
-                      "expression": "COUNT(`*`)"
                     }
                   ],
                   "filters": [
@@ -1954,65 +2755,44 @@
                       "expression": "`action_name` IN ('updateConversationMessageFeedback')"
                     }
                   ],
-                  "cubeGroupingSets": {
-                    "sets": [
-                      {
-                        "fieldNames": [
-                          "space_id",
-                          "workspace_url"
-                        ]
-                      },
-                      {}
-                    ]
-                  },
-                  "disaggregated": false,
-                  "orders": [
-                    {
-                      "direction": "ASC",
-                      "expression": "`space_id`"
-                    },
-                    {
-                      "direction": "ASC",
-                      "expression": "`workspace_url`"
-                    }
-                  ]
+                  "disaggregated": true
                 }
               }
             ],
             "spec": {
-              "version": 3,
+              "version": 2,
               "frame": {
                 "showTitle": true,
                 "title": "By Feedback Rating"
               },
-              "widgetType": "pivot",
+              "widgetType": "table",
               "encodings": {
-                "rows": [
+                "columns": [
                   {
-                    "fieldName": "space_id",
-                    "displayName": "Genie Space ID"
+                    "fieldName": "space_name"
                   },
                   {
-                    "fieldName": "workspace_url",
-                    "displayName": "URL"
-                  }
-                ],
-                "cell": {
-                  "type": "multi-cell",
-                  "fields": [
-                    {
-                      "fieldName": "count(*)",
-                      "cellType": "text",
-                      "displayName": "Questions"
+                    "fieldName": "feedback_rating"
+                  },
+                  {
+                    "fieldName": "genie_link",
+                    "columnWidth": 200,
+                    "displayName": "URL",
+                    "actions": {
+                      "click": {
+                        "type": "link",
+                        "urlTemplate": "{{ workspace_url }}",
+                        "openInNewTab": true
+                      }
                     }
-                  ]
-                }
+                  }
+                ]
               }
             }
           },
           "position": {
             "x": 0,
-            "y": 14,
+            "y": 22,
             "width": 6,
             "height": 4
           }
@@ -2027,16 +2807,20 @@
                   "datasetName": "ds_mau_trend",
                   "fields": [
                     {
-                      "name": "space_id",
-                      "expression": "`space_id`"
+                      "name": "space_name",
+                      "expression": "`space_name`"
                     },
                     {
                       "name": "event_time_local_tz",
                       "expression": "`event_time_local_tz`"
                     },
                     {
-                      "name": "user",
-                      "expression": "`user`"
+                      "name": "interaction_channel",
+                      "expression": "`interaction_channel`"
+                    },
+                    {
+                      "name": "dbx_user",
+                      "expression": "`dbx_user`"
                     },
                     {
                       "name": "genie_link",
@@ -2058,28 +2842,45 @@
             "spec": {
               "version": 2,
               "frame": {
-                "showTitle": true,
-                "title": "Comments"
+                "showTitle": false
               },
               "widgetType": "table",
               "encodings": {
                 "columns": [
                   {
-                    "fieldName": "space_id",
-                    "displayName": "Genie Space ID"
+                    "fieldName": "space_name",
+                    "displayName": "Genie Space",
+                    "actions": {
+                      "click": {
+                        "type": "link",
+                        "urlTemplate": "",
+                        "openInNewTab": true
+                      }
+                    }
                   },
                   {
                     "fieldName": "event_time_local_tz",
                     "displayName": "Time Submitted"
                   },
                   {
-                    "fieldName": "user",
+                    "fieldName": "interaction_channel",
+                    "displayName": "Channel"
+                  },
+                  {
+                    "fieldName": "dbx_user",
                     "displayName": "Submitted By"
                   },
                   {
                     "fieldName": "genie_link",
-                    "columnWidth": 500,
-                    "displayName": "Genie Link"
+                    "columnWidth": 200,
+                    "displayName": "URL",
+                    "actions": {
+                      "click": {
+                        "type": "link",
+                        "urlTemplate": "{{ genie_link }}",
+                        "openInNewTab": true
+                      }
+                    }
                   }
                 ]
               }
@@ -2087,7 +2888,7 @@
           },
           "position": {
             "x": 0,
-            "y": 10,
+            "y": 18,
             "width": 12,
             "height": 4
           }
@@ -2121,6 +2922,10 @@
             ],
             "spec": {
               "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Total Questions by channel"
+              },
               "widgetType": "pie",
               "encodings": {
                 "angle": {
@@ -2128,16 +2933,22 @@
                   "scale": {
                     "type": "quantitative"
                   },
-                  "displayName": "Total Questions"
+                  "axis": {
+                    "hideTitle": true
+                  }
                 },
                 "color": {
                   "fieldName": "interaction_channel",
                   "legend": {
                     "position": "right",
-                    "title": "Channel"
+                    "title": "Channel",
+                    "hide": false
                   },
                   "scale": {
-                    "type": "categorical"
+                    "type": "categorical",
+                    "sort": {
+                      "by": "angle-reversed"
+                    }
                   }
                 },
                 "label": {
@@ -2151,10 +2962,10 @@
             }
           },
           "position": {
-            "x": 6,
-            "y": 1,
+            "x": 0,
+            "y": 3,
             "width": 6,
-            "height": 3
+            "height": 4
           }
         },
         {
@@ -2167,41 +2978,20 @@
                   "datasetName": "ds_mau_trend",
                   "fields": [
                     {
-                      "name": "user",
-                      "expression": "`user`"
+                      "name": "space_name",
+                      "expression": "`space_name`"
                     },
                     {
-                      "name": "space_id",
-                      "expression": "`space_id`"
+                      "name": "count(*)",
+                      "expression": "COUNT(`*`)"
                     }
                   ],
                   "filters": [
                     {
-                      "expression": "`action` IN ('Ask Question')"
+                      "expression": "`action` IN ('Provide Feedback')"
                     }
                   ],
-                  "cubeGroupingSets": {
-                    "sets": [
-                      {
-                        "fieldNames": [
-                          "user",
-                          "space_id"
-                        ]
-                      },
-                      {}
-                    ]
-                  },
-                  "disaggregated": false,
-                  "orders": [
-                    {
-                      "direction": "ASC",
-                      "expression": "`user`"
-                    },
-                    {
-                      "direction": "ASC",
-                      "expression": "`space_id`"
-                    }
-                  ]
+                  "disaggregated": false
                 }
               }
             ],
@@ -2209,70 +2999,49 @@
               "version": 3,
               "frame": {
                 "showTitle": true,
-                "title": "Which users are asking questions and in what space?"
+                "title": "Which spaces have comments?"
               },
-              "widgetType": "pivot",
+              "widgetType": "bar",
               "encodings": {
-                "rows": [
-                  {
-                    "fieldName": "user",
-                    "displayName": "Unique Users"
-                  },
-                  {
-                    "fieldName": "space_id",
-                    "displayName": "Genie Space ID"
+                "x": {
+                  "fieldName": "space_name",
+                  "displayName": "Unique Users",
+                  "scale": {
+                    "type": "categorical"
                   }
-                ]
+                },
+                "y": {
+                  "fieldName": "count(*)",
+                  "displayName": "# Comments",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
               }
             }
           },
           "position": {
             "x": 0,
-            "y": 9,
+            "y": 13,
             "width": 12,
             "height": 5
           }
-        }
-      ],
-      "pageType": "PAGE_TYPE_CANVAS",
-      "layoutVersion": "GRID_V1"
-    },
-    {
-      "name": "0af06244",
-      "displayName": "Global Filters",
-      "layout": [
+        },
         {
           "widget": {
-            "name": "workspace-id",
+            "name": "68bd0f00",
             "queries": [
               {
-                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd1123eae74e11dd4267160_event_month",
+                "name": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d13a7ac711a3fd12b6515_space_name",
                 "query": {
-                  "datasetName": "ds_exec_summary",
+                  "datasetName": "ds_mau_trend",
                   "fields": [
                     {
-                      "name": "event_month",
-                      "expression": "`event_month`"
+                      "name": "space_name",
+                      "expression": "`space_name`"
                     },
                     {
-                      "name": "event_month_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bfc565516b88ae4fa3f0fcd9ca7_event_month",
-                "query": {
-                  "datasetName": "2044235c",
-                  "fields": [
-                    {
-                      "name": "event_month",
-                      "expression": "`event_month`"
-                    },
-                    {
-                      "name": "event_month_associativity",
+                      "name": "space_name_associativity",
                       "expression": "COUNT_IF(`associative_filter_predicate_group`)"
                     }
                   ],
@@ -2284,129 +3053,41 @@
               "version": 2,
               "frame": {
                 "showTitle": true,
-                "title": "Month"
+                "title": "Genie Space"
               },
               "widgetType": "filter-single-select",
               "encodings": {
                 "fields": [
                   {
-                    "fieldName": "event_month",
-                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd1123eae74e11dd4267160_event_month"
-                  },
-                  {
-                    "fieldName": "event_month",
-                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bfc565516b88ae4fa3f0fcd9ca7_event_month"
+                    "fieldName": "space_name",
+                    "queryName": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d13a7ac711a3fd12b6515_space_name"
                   }
                 ]
               }
             }
           },
           "position": {
-            "x": 0,
-            "y": 0,
-            "width": 1,
+            "x": 6,
+            "y": 5,
+            "width": 6,
             "height": 2
           }
         },
         {
           "widget": {
-            "name": "genie-space-id",
+            "name": "bc694eb8",
             "queries": [
               {
-                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd11264936f3191eed02b03_space_id",
+                "name": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d13a7ac711a3fd12b6515_dbx_user",
                 "query": {
                   "datasetName": "ds_mau_trend",
                   "fields": [
                     {
-                      "name": "space_id",
-                      "expression": "`space_id`"
+                      "name": "dbx_user",
+                      "expression": "`dbx_user`"
                     },
                     {
-                      "name": "space_id_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd112709dc971d8c8a6d2ef_space_id",
-                "query": {
-                  "datasetName": "ds_top_spaces",
-                  "fields": [
-                    {
-                      "name": "space_id",
-                      "expression": "`space_id`"
-                    },
-                    {
-                      "name": "space_id_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 2,
-              "frame": {
-                "showTitle": true,
-                "title": "Genie Space ID"
-              },
-              "widgetType": "filter-single-select",
-              "encodings": {
-                "fields": [
-                  {
-                    "fieldName": "space_id",
-                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd11264936f3191eed02b03_space_id"
-                  },
-                  {
-                    "fieldName": "space_id",
-                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd112709dc971d8c8a6d2ef_space_id"
-                  }
-                ]
-              }
-            }
-          },
-          "position": {
-            "x": 0,
-            "y": 2,
-            "width": 1,
-            "height": 2
-          }
-        },
-        {
-          "widget": {
-            "name": "user",
-            "queries": [
-              {
-                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd11264936f3191eed02b03_user",
-                "query": {
-                  "datasetName": "ds_mau_trend",
-                  "fields": [
-                    {
-                      "name": "user",
-                      "expression": "`user`"
-                    },
-                    {
-                      "name": "user_associativity",
-                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd11273a7faca1e460b4864_user",
-                "query": {
-                  "datasetName": "ds_user_activity",
-                  "fields": [
-                    {
-                      "name": "user",
-                      "expression": "`user`"
-                    },
-                    {
-                      "name": "user_associativity",
+                      "name": "dbx_user_associativity",
                       "expression": "COUNT_IF(`associative_filter_predicate_group`)"
                     }
                   ],
@@ -2424,25 +3105,27 @@
               "encodings": {
                 "fields": [
                   {
-                    "fieldName": "user",
-                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd11264936f3191eed02b03_user"
-                  },
-                  {
-                    "fieldName": "user",
-                    "queryName": "dashboards/01f13aea9cc71695b2d959b29d5f55f2/datasets/01f13bed9cd11273a7faca1e460b4864_user"
+                    "fieldName": "dbx_user",
+                    "queryName": "dashboards/01f154bf947d10a0a5eb347ecbde89e2/datasets/01f154bf947d13a7ac711a3fd12b6515_dbx_user"
                   }
                 ]
               }
             }
           },
           "position": {
-            "x": 0,
-            "y": 4,
-            "width": 1,
+            "x": 6,
+            "y": 3,
+            "width": 6,
             "height": 2
           }
         }
       ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "0af06244",
+      "displayName": "Global Filters",
       "pageType": "PAGE_TYPE_GLOBAL_FILTERS",
       "layoutVersion": "GRID_V1"
     },
@@ -2471,7 +3154,9 @@
             "name": "perf-subtitle",
             "multilineTextboxSpec": {
               "lines": [
-                "Genie-generated SQL query performance from system.query.history"
+                "Genie-generated SQL query performance from **system.query.history**.\n",
+                "\n",
+                "This is not part of SDP to maintain data freshness, as this data source refreshes regularly."
               ]
             }
           },
@@ -2479,7 +3164,7 @@
             "x": 0,
             "y": 1,
             "width": 12,
-            "height": 1
+            "height": 2
           }
         },
         {
@@ -2545,7 +3230,7 @@
           },
           "position": {
             "x": 0,
-            "y": 8,
+            "y": 10,
             "width": 12,
             "height": 6
           }
@@ -2611,7 +3296,7 @@
           },
           "position": {
             "x": 0,
-            "y": 14,
+            "y": 16,
             "width": 12,
             "height": 6
           }
@@ -2646,16 +3331,12 @@
               "version": 1,
               "frame": {
                 "showTitle": true,
-                "title": "Monthly Query Volume"
+                "title": "By Query Volume"
               },
               "widgetType": "combo",
               "encodings": {
-                "x": {
-                  "fieldName": "monthly(start_time)",
-                  "displayName": "Month",
-                  "scale": {
-                    "type": "temporal"
-                  }
+                "label": {
+                  "show": true
                 },
                 "y": {
                   "primary": {
@@ -2678,15 +3359,260 @@
                     "type": "quantitative"
                   }
                 },
-                "label": {
-                  "show": true
+                "x": {
+                  "fieldName": "monthly(start_time)",
+                  "displayName": "Month",
+                  "scale": {
+                    "type": "temporal"
+                  }
                 }
               }
             }
           },
           "position": {
             "x": 0,
-            "y": 2,
+            "y": 4,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "a76f9983",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Monthly View"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "22b2d741",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### Weekly View"
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 22,
+            "width": 12,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "9187ca19",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_query_performance",
+                  "fields": [
+                    {
+                      "name": "weekly(start_time)",
+                      "expression": "DATE_TRUNC(\"WEEK\", `start_time`)"
+                    },
+                    {
+                      "name": "sum(total_queries)",
+                      "expression": "SUM(`total_queries`)"
+                    },
+                    {
+                      "name": "countdistinct(executed_by_user_id)",
+                      "expression": "COUNT(DISTINCT `executed_by_user_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 1,
+              "frame": {
+                "showTitle": true,
+                "title": "By Query Volume"
+              },
+              "widgetType": "combo",
+              "encodings": {
+                "label": {
+                  "show": true
+                },
+                "y": {
+                  "primary": {
+                    "fields": [
+                      {
+                        "fieldName": "sum(total_queries)",
+                        "displayName": "Total Queries"
+                      }
+                    ]
+                  },
+                  "secondary": {
+                    "fields": [
+                      {
+                        "fieldName": "countdistinct(executed_by_user_id)",
+                        "displayName": "Total Users"
+                      }
+                    ]
+                  },
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "x": {
+                  "fieldName": "weekly(start_time)",
+                  "displayName": "Week",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 23,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "e226a823",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_query_performance",
+                  "fields": [
+                    {
+                      "name": "weekly(start_time)",
+                      "expression": "DATE_TRUNC(\"WEEK\", `start_time`)"
+                    },
+                    {
+                      "name": "p50_latency_s",
+                      "expression": "`p50_latency_s`"
+                    },
+                    {
+                      "name": "p95_latency_s",
+                      "expression": "`p95_latency_s`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Query Latency Trend (P50 / P95) in seconds",
+                "showDescription": true,
+                "description": "Latency from question being asked to receiving an answer"
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "weekly(start_time)",
+                  "displayName": "Week",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "p50_latency_s",
+                      "displayName": "P50 Latency (s)"
+                    },
+                    {
+                      "fieldName": "p95_latency_s",
+                      "displayName": "P95 Latency (s)"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 29,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "195554cd",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_query_performance",
+                  "fields": [
+                    {
+                      "name": "weekly(start_time)",
+                      "expression": "DATE_TRUNC(\"WEEK\", `start_time`)"
+                    },
+                    {
+                      "name": "success_rate_pct",
+                      "expression": "`success_rate_pct`"
+                    },
+                    {
+                      "name": "cache_hit_pct",
+                      "expression": "`cache_hit_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "frame": {
+                "showTitle": true,
+                "title": "Query Success Rate & Cache Hit Rate"
+              },
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "weekly(start_time)",
+                  "displayName": "Week",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "fields": [
+                    {
+                      "fieldName": "success_rate_pct",
+                      "displayName": "Success Rate (%)"
+                    },
+                    {
+                      "fieldName": "cache_hit_pct",
+                      "displayName": "Cache Hit Rate (%)"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 35,
             "width": 12,
             "height": 6
           }
